@@ -2,6 +2,23 @@
 
 A Python-based utility that automates file organization tasks to help keep your directories clean and structured. This tool can monitor directories, sort files based on extensions, apply naming conventions, and automate organization at system startup.
 
+## Installation
+
+You can install the package directly from PyPI:
+
+```bash
+pip install file-organizer-automation
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/splunkdevabhi/file_organizer_automation.git
+cd file-organizer-automation
+pip install -e .
+```
+
+
 ## Features
 
 - **Automatic File Sorting**: Organizes files based on file extensions or custom rules

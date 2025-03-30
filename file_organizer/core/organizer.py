@@ -1,5 +1,392 @@
 #!/usr/bin/env python3
 """
+Core organizer module for the file organizer package.
+Provides functionality to organize files by extension, date and detect duplicates.
+"""
+
+import os
+import shutil
+import logging
+import hashlib
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Set, Optional, Tuple
+
+# Configure logging
+LOG_DIR = os.path.expanduser("~/.file_organizer/logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+log_file = os.path.join(LOG_DIR, "file_organizer.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("file_organizer")
+
+
+class FileOrganizer:
+    """
+    A class that provides methods to organize files in a directory by
+    various criteria like extension, date, and detect duplicates.
+    """
+
+    def __init__(self, directory: str):
+        """
+        Initialize the FileOrganizer with a target directory.
+
+        Args:
+            directory (str): Path to the directory to organize
+        """
+        self.directory = os.path.abspath(directory)
+        if not os.path.exists(self.directory):
+            raise ValueError(f"Directory '{directory}' does not exist")
+        if not os.path.isdir(self.directory):
+            raise ValueError(f"'{directory}' is not a directory")
+        
+        logger.info(f"Initialized FileOrganizer for directory: {self.directory}")
+    
+    def organize_by_extension(self) -> Dict[str, int]:
+        """
+        Organize files in the target directory by their extensions.
+        
+        Creates subdirectories for each file extension and moves files into them.
+        
+        Returns:
+            Dict[str, int]: A dictionary mapping extensions to counts of files moved
+        """
+        return organize_by_extension(self.directory)
+    
+    def organize_by_date(self, date_format: str = "%Y-%m-%d") -> Dict[str, int]:
+        """
+        Organize files based on their modification dates.
+        
+        Args:
+            date_format (str): Format string for date-based directory names
+            
+        Returns:
+            Dict[str, int]: A dictionary mapping date folders to counts of files moved
+        """
+        return organize_by_date(self.directory, date_format)
+    
+    def organize_duplicates(self, delete: bool = False) -> Dict[str, List[str]]:
+        """
+        Find and optionally remove duplicate files based on content hash.
+        
+        Args:
+            delete (bool): If True, delete duplicate files, keeping only one copy
+            
+        Returns:
+            Dict[str, List[str]]: A dictionary mapping file hashes to lists of duplicate file paths
+        """
+        return organize_duplicates(self.directory, delete)
+    
+    def _calculate_file_hash(self, file_path: str, block_size: int = 65536) -> str:
+        """
+        Calculate SHA-256 hash of a file.
+        
+        Args:
+            file_path (str): Path to the file
+            block_size (int): Size of blocks to read
+            
+        Returns:
+            str: Hexadecimal digest of file hash
+        """
+        hasher = hashlib.sha256()
+        with open(file_path, 'rb') as file:
+            buf = file.read(block_size)
+            while len(buf) > 0:
+                hasher.update(buf)
+                buf = file.read(block_size)
+        return hasher.hexdigest()
+
+
+def organize_by_extension(directory: str) -> Dict[str, int]:
+    """
+    Organize files in the given directory by their extensions.
+    
+    Args:
+        directory (str): Path to the directory to organize
+        
+    Returns:
+        Dict[str, int]: A dictionary mapping extensions to counts of files moved
+    """
+    directory = os.path.abspath(directory)
+    logger.info(f"Organizing files by extension in {directory}")
+    
+    stats = {}  # To track counts by extension
+    
+    try:
+        # Get all files (excluding directories) in the given directory
+        files = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+        
+        for file in files:
+            # Skip hidden files
+            if file.startswith('.'):
+                continue
+                
+            # Determine the extension
+            _, ext = os.path.splitext(file)
+            ext = ext.lower().lstrip('.')
+            
+            # Use "no_extension" for files without extension
+            if not ext:
+                ext = "no_extension"
+                
+            # Create a subdirectory for this extension if it doesn't exist
+            ext_dir = os.path.join(directory, ext)
+            if not os.path.exists(ext_dir):
+                os.makedirs(ext_dir)
+                logger.debug(f"Created directory for {ext} files: {ext_dir}")
+            
+            # Move the file to the extension directory
+            source = os.path.join(directory, file)
+            destination = os.path.join(ext_dir, file)
+            
+            # Handle name conflicts
+            if os.path.exists(destination):
+                base, ext = os.path.splitext(file)
+                i = 1
+                while os.path.exists(os.path.join(ext_dir, f"{base}_{i}{ext}")):
+                    i += 1
+                destination = os.path.join(ext_dir, f"{base}_{i}{ext}")
+            
+            # Move the file
+            shutil.move(source, destination)
+            logger.debug(f"Moved {file} to {destination}")
+            
+            # Update statistics
+            stats[ext] = stats.get(ext, 0) + 1
+        
+        logger.info(f"Finished organizing by extension: {stats}")
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Error organizing files by extension: {str(e)}")
+        raise
+
+
+def organize_by_date(directory: str, date_format: str = "%Y-%m-%d") -> Dict[str, int]:
+    """
+    Organize files based on their modification dates.
+    
+    Args:
+        directory (str): Path to the directory to organize
+        date_format (str): Format string for date-based directory names
+        
+    Returns:
+        Dict[str, int]: A dictionary mapping date folders to counts of files moved
+    """
+    directory = os.path.abspath(directory)
+    logger.info(f"Organizing files by date in {directory}")
+    
+    stats = {}  # To track counts by date
+    
+    try:
+        # Get all files (excluding directories) in the given directory
+        files = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+        
+        for file in files:
+            # Skip hidden files
+            if file.startswith('.'):
+                continue
+                
+            # Get the file's modification time
+            file_path = os.path.join(directory, file)
+            mod_time = os.path.getmtime(file_path)
+            date_str = datetime.fromtimestamp(mod_time).strftime(date_format)
+            
+            # Create a subdirectory for this date if it doesn't exist
+            date_dir = os.path.join(directory, date_str)
+            if not os.path.exists(date_dir):
+                os.makedirs(date_dir)
+                logger.debug(f"Created directory for {date_str}: {date_dir}")
+            
+            # Move the file to the date directory
+            source = os.path.join(directory, file)
+            destination = os.path.join(date_dir, file)
+            
+            # Handle name conflicts
+            if os.path.exists(destination):
+                base, ext = os.path.splitext(file)
+                i = 1
+                while os.path.exists(os.path.join(date_dir, f"{base}_{i}{ext}")):
+                    i += 1
+                destination = os.path.join(date_dir, f"{base}_{i}{ext}")
+            
+            # Move the file
+            shutil.move(source, destination)
+            logger.debug(f"Moved {file} to {destination}")
+            
+            # Update statistics
+            stats[date_str] = stats.get(date_str, 0) + 1
+        
+        logger.info(f"Finished organizing by date: {stats}")
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Error organizing files by date: {str(e)}")
+        raise
+
+
+def organize_duplicates(directory: str, delete: bool = False) -> Dict[str, List[str]]:
+    """
+    Find and optionally remove duplicate files based on content hash.
+    
+    Args:
+        directory (str): Path to the directory to scan for duplicates
+        delete (bool): If True, delete duplicate files, keeping only one copy
+        
+    Returns:
+        Dict[str, List[str]]: A dictionary mapping file hashes to lists of duplicate file paths
+    """
+    directory = os.path.abspath(directory)
+    logger.info(f"Finding duplicate files in {directory}")
+    
+    # Maps file sizes to file paths (for quick filtering)
+    size_map: Dict[int, List[str]] = {}
+    # Maps file hash to list of file paths (for identifying duplicates)
+    hash_map: Dict[str, List[str]] = {}
+    
+    try:
+        # First pass: Group files by size (quick filtering)
+        for root, _, files in os.walk(directory):
+            for file in files:
+                if file.startswith('.'):
+                    continue
+                    
+                file_path = os.path.join(root, file)
+                try:
+                    # Get file size
+                    file_size = os.path.getsize(file_path)
+                    if file_size not in size_map:
+                        size_map[file_size] = []
+                    size_map[file_size].append(file_path)
+                except (OSError, PermissionError) as e:
+                    logger.warning(f"Could not access file {file_path}: {str(e)}")
+        
+        # Second pass: Calculate hashes only for files with the same size
+        for file_size, file_list in size_map.items():
+            if len(file_list) < 2:
+                continue  # Skip files with unique sizes
+                
+            for file_path in file_list:
+                try:
+                    file_hash = _calculate_file_hash(file_path)
+                    if file_hash not in hash_map:
+                        hash_map[file_hash] = []
+                    hash_map[file_hash].append(file_path)
+                except (OSError, PermissionError) as e:
+                    logger.warning(f"Could not hash file {file_path}: {str(e)}")
+        
+        # Filter out non-duplicates
+        duplicates = {h: paths for h, paths in hash_map.items() if len(paths) > 1}
+        
+        # Handle deletion if requested
+        if delete and duplicates:
+            logger.info("Deleting duplicate files...")
+            deleted_count = 0
+            
+            for file_hash, file_paths in duplicates.items():
+                # Keep the first file, delete the rest
+                for file_path in file_paths[1:]:
+                    try:
+                        os.remove(file_path)
+                        logger.info(f"Deleted duplicate file: {file_path}")
+                        deleted_count += 1
+                    except (OSError, PermissionError) as e:
+                        logger.error(f"Could not delete file {file_path}: {str(e)}")
+            
+            logger.info(f"Deleted {deleted_count} duplicate files")
+        
+        # Log summary
+        total_duplicates = sum(len(paths) - 1 for paths in duplicates.values())
+        logger.info(f"Found {total_duplicates} duplicate files in {len(duplicates)} groups")
+        
+        return duplicates
+        
+    except Exception as e:
+        logger.error(f"Error finding duplicate files: {str(e)}")
+        raise
+
+
+def _calculate_file_hash(file_path: str, block_size: int = 65536) -> str:
+    """
+    Calculate SHA-256 hash of a file.
+    
+    Args:
+        file_path (str): Path to the file
+        block_size (int): Size of blocks to read
+        
+    Returns:
+        str: Hexadecimal digest of file hash
+    """
+    hasher = hashlib.sha256()
+    with open(file_path, 'rb') as file:
+        buf = file.read(block_size)
+        while len(buf) > 0:
+            hasher.update(buf)
+            buf = file.read(block_size)
+    return hasher.hexdigest()
+
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Organize files by various criteria")
+    parser.add_argument("directory", help="Directory to organize")
+    
+    subparsers = parser.add_subparsers(dest="command", help="Organization command")
+    
+    # Extension organization
+    ext_parser = subparsers.add_parser("extension", help="Organize by file extension")
+    
+    # Date organization
+    date_parser = subparsers.add_parser("date", help="Organize by file modification date")
+    date_parser.add_argument("--format", default="%Y-%m-%d", 
+                          help="Date format (default: %%Y-%%m-%%d)")
+    
+    # Duplicate organization
+    dup_parser = subparsers.add_parser("duplicates", help="Find duplicate files")
+    dup_parser.add_argument("--delete", action="store_true", 
+                         help="Delete duplicate files (keeping one copy)")
+    
+    args = parser.parse_args()
+    
+    try:
+        organizer = FileOrganizer(args.directory)
+        
+        if args.command == "extension":
+            result = organizer.organize_by_extension()
+            print(f"Organized {sum(result.values())} files by extension")
+            for ext, count in result.items():
+                print(f"  - {ext}: {count} files")
+                
+        elif args.command == "date":
+            result = organizer.organize_by_date(args.format)
+            print(f"Organized {sum(result.values())} files by date")
+            for date, count in result.items():
+                print(f"  - {date}: {count} files")
+                
+        elif args.command == "duplicates":
+            result = organizer.organize_duplicates(args.delete)
+            total = sum(len(paths) - 1 for paths in result.values())
+            action = "Deleted" if args.delete else "Found"
+            print(f"{action} {total} duplicate files in {len(result)} groups")
+            
+        else:
+            parser.print_help()
+            
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        print(f"Error: {str(e)}")
+        exit(1)
+
+#!/usr/bin/env python3
+"""
 File Organizer Core Module
 
 This module provides the core functionality for organizing files based on

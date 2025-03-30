@@ -149,3 +149,42 @@ The file organizer can be configured using a JSON configuration file:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+
+## Demo
+
+Here is a demonstration of the file organizer in action.
+
+**Before Organization:**
+```
+test_files/
+├── document1.txt
+├── document2.doc
+├── script.py
+├── test.jpg
+├── test.png
+└── webpage.html
+```
+
+**After Organization:**
+```plaintext
+test_files/
+├── doc/
+│   └── document2.doc
+├── html/
+│   └── webpage.html
+├── jpg/
+│   └── test.jpg
+├── png/
+│   └── test.png
+├── py/
+│   └── script.py
+└── txt/
+    └── document1.txt
+```
+
+The file organizer successfully categorizes files into directories based on their extensions:
+- Documents (.txt, .doc)
+- Images (.jpg, .png)
+- Code files (.py)
+- Web files (.html)
+

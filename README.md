@@ -188,3 +188,12 @@ The file organizer successfully categorizes files into directories based on thei
 - Code files (.py)
 - Web files (.html)
 
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+- **Abhishek Shukla** - *Initial work*
+
